@@ -5,6 +5,7 @@
 #include <ftw.h>
 #include <unistd.h>
 #define uchar unsigned char
+#define ushort unsigned short
 
 int count_highbits(const uchar c) {
     int bit = 8;
@@ -14,40 +15,44 @@ int count_highbits(const uchar c) {
     return 8-bit;
 };
 
-int is_printable(const uchar c) {
-    return ( c > 31 && c < 127 );
+uchar get_lower_bits(uchar c, int hb) {
+    c <<= hb;
+    c >>= hb;
+    return c;
+};
+
+int is_not_printable(const ushort c) {
+    return ( c < 32  || (c >= 0x80 && c <= 0x9f ));
 };
 
 const char *find_violation(const char *s) {
     int togo = 0;
     const char *mbstart = s;
+    ushort wc;
     while(*s) {
         uchar c = (uchar) *s;
+        int hb = count_highbits(c);
         if(togo == 0) {
             mbstart = s;
-            switch (count_highbits(c)) {
-                case 0:
-                    break;
-                case 2:
-                    togo = 1;
-                    break;
-                case 3:
-                    togo = 2;
-                    break;
-                case 4:
-                    togo = 3;
-                    break;
-                default:
-                    return mbstart;
-            }
-            if( ! is_printable( c & 127 ) ) {
+            wc = get_lower_bits(c,hb);
+            if(hb > 4 || hb == 1) {
                 return mbstart;
+            } else if(hb > 0) {
+                togo = hb-1;
             }
         } else {
-            if( count_highbits(c) != 1 ) {
+            if( hb != 1 ) {
                 return mbstart;
             }
+            wc <<= 6;
+            wc += get_lower_bits(c,hb);
             togo--;
+        }
+
+        if(togo == 0) {
+            if( is_not_printable( wc ) ) {
+                return mbstart;
+            }
         }
         s++;
     }
@@ -61,12 +66,13 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
     const char *ep = find_violation(fn);
     const char *end = fn +strlen(fn);
     if( end != ep) {
-        fprintf(stderr,"no printable utf-8-filename:");
+        //fprintf(stderr,"no printable utf-8-filename:");
         write(2,fn,ep-fn);
         fprintf(stderr,"#(%d)",(uchar) *ep);
         ep++;
-        const char *last = ep;
+        const char *last;
         do {
+            last = ep;
             ep = find_violation(last);
             write(2,last,ep-last);
             if(ep == end) {
@@ -77,7 +83,7 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
         } while(end != ep);
 
         fprintf(stderr,"\n");
-    }
+    } 
     return 0;
 }
 
