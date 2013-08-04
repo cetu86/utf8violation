@@ -82,11 +82,12 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
 }
 
 int main(int argc, char** argv) {
+    char *arg;
     if(argc != 2) {
-        fprintf(stderr,"no argument\n");
-        return -1;
+        arg = ".";
+    } else {
+        arg = argv[1];
     }
-    char *arg = argv[1];
     nftw (arg, &walker, 64, 0);
     return 0;
 };
