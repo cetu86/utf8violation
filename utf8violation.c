@@ -65,8 +65,9 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
         write(2,fn,ep-fn);
         fprintf(stderr,"#(%d)",(uchar) *ep);
         ep++;
-        const char *last = ep;
+        const char *last;
         do {
+            last = ep;
             ep = find_violation(last);
             write(2,last,ep-last);
             if(ep == end) {
