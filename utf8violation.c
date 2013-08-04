@@ -1,6 +1,9 @@
 #define _XOPEN_SOURCE 500
 #include <stdio.h>
+#include <malloc.h>
+#include <string.h>
 #include <ftw.h>
+#include <unistd.h>
 #define uchar unsigned char
 
 int count_highbits(const uchar c) {
@@ -15,11 +18,13 @@ int is_printable(const uchar c) {
     return ( c > 31 && c < 127 );
 };
 
-int is_printable_utf8(const char *s) {
+const char *find_violation(const char *s) {
     int togo = 0;
+    const char *mbstart = s;
     while(*s) {
         uchar c = (uchar) *s;
         if(togo == 0) {
+            mbstart = s;
             switch (count_highbits(c)) {
                 case 0:
                     break;
@@ -33,34 +38,44 @@ int is_printable_utf8(const char *s) {
                     togo = 3;
                     break;
                 default:
-                    return 0;
+                    return mbstart;
             }
             if( ! is_printable( c & 127 ) ) {
-                return 0;
+                return mbstart;
             }
         } else {
             if( count_highbits(c) != 1 ) {
-                return 0;
+                return mbstart;
             }
             togo--;
         }
         s++;
     }
-    return togo==0;
+    if(togo == 0) {
+        return s;
+    }
+    return mbstart;
 }
 
 int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
-    if( ! is_printable_utf8(fn) ) {
+    const char *ep = find_violation(fn);
+    const char *end = fn +strlen(fn);
+    if( end != ep) {
         fprintf(stderr,"no printable utf-8-filename:");
-        while(*fn) {
-            uchar c = (uchar) *fn;
-            if(is_printable(c)) {
-                fprintf(stderr,"%c",c);
-            } else {
-                fprintf(stderr,"#x%x",c);
+        write(2,fn,ep-fn);
+        fprintf(stderr,"#(%d)",(uchar) *ep);
+        ep++;
+        const char *last = ep;
+        do {
+            ep = find_violation(last);
+            write(2,last,ep-last);
+            if(ep == end) {
+                break;
             }
-            fn++;
-        }
+            fprintf(stderr,"#(%d)",(uchar) *ep);
+            ep++;
+        } while(end != ep);
+
         fprintf(stderr,"\n");
     }
     return 0;
