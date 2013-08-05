@@ -42,7 +42,7 @@ int is_not_printable(const ushort c) {
     return ( c < 32  || (c >= 0x80 && c <= 0x9f ));
 };
 
-const char *find_violation(const char *s) {
+const char *find_violation(const char *s, int escape) {
     int togo = 0;
     const char *mbstart = s;
     ushort wc;
@@ -69,6 +69,8 @@ const char *find_violation(const char *s) {
         if(togo == 0) {
             if( is_not_printable( wc ) ) {
                 return mbstart;
+            } else if (escape && wc == '#') {
+                return mbstart;
             }
         }
         s++;
@@ -80,25 +82,20 @@ const char *find_violation(const char *s) {
 }
 
 int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
-    const char *ep = find_violation(fn);
     const char *end = fn +strlen(fn);
-    if( end != ep) {
-        //fprintf(stderr,"no printable utf-8-filename:");
-        write(2,fn,ep-fn);
-        fprintf(stderr,"#(%d)",(uchar) *ep);
-        ep++;
+    if( find_violation(fn,0) != end) {
+        const char *ep = fn;
         const char *last;
-        do {
+        while ( end != ep) {
             last = ep;
-            ep = find_violation(last);
+            ep = find_violation(last,1);
             write(2,last,ep-last);
-            if(ep == end) {
+            if ( ep == end) 
                 break;
-            }
             fprintf(stderr,"#(%d)",(uchar) *ep);
             ep++;
-        } while(end != ep);
 
+        }
         fprintf(stderr,"\n");
     } 
     return 0;
