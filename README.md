@@ -8,9 +8,10 @@ In Unix filenames can be anything.
 As long as a filename doesn't contain the "/"-character or a 0-byte, any binary-garbage forms a legal filename.
 This design choice is inherently flawed. It puts the user in charge of making sure filenames are sane.
 
-This program helps the user detect filenames that contain non-utf8 characters or characters from the 
-unicode [C0 and C1 sets](https://en.wikipedia.org/wiki/C0_and_C1_control_codes), i.e. characters that
-are valid unicode but non-printable.
+This program helps the user detect filenames that contain non-utf8 characters or other not alllowed characters.
+Currenty not allowed are characters from the
+unicode [C0 and C1 sets](https://en.wikipedia.org/wiki/C0_and_C1_control_codes), except for space, #(32).
+You can easily modify this behaviour by changing the "is_not_printable"-function.
 
 
 usage
