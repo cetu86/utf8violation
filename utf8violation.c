@@ -15,12 +15,15 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#define _XOPEN_SOURCE 500
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <malloc.h>
 #include <string.h>
+#include <stdlib.h>
 #include <ftw.h>
 #include <unistd.h>
+#include <readline/readline.h>
+#include <readline/history.h>
 #define uchar unsigned char
 #define ushort unsigned short
 
@@ -43,7 +46,7 @@ int is_not_printable(const ushort c) {
 };
 
 const char *find_violation(const char *s, int escape) {
-    int togo = 0;
+    int togo = 0; /* bytes left in multibyte character */
     const char *mbstart = s;
     ushort wc;
     while(*s) {
@@ -81,33 +84,135 @@ const char *find_violation(const char *s, int escape) {
     return mbstart;
 }
 
-int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
-    const char *end = fn +strlen(fn);
+char *get_escaped_name(const char *fn) {
+    const char *end = fn + strlen(fn);
+    char *escaped_name = 0;
     if( find_violation(fn,0) != end) {
+        escaped_name = (char *) malloc(sizeof(char) * (1 + strlen(fn) * strlen("#(000)")));
+        char *escp = escaped_name;
         const char *ep = fn;
         const char *last;
         while ( end != ep) {
             last = ep;
             ep = find_violation(last,1);
-            write(2,last,ep-last);
+            strncpy(escp,last,ep-last);
+            escp += ep-last;
+            *escp = 0;
             if ( ep == end) 
                 break;
-            fprintf(stderr,"#(%d)",(uchar) *ep);
+            sprintf(escp,"#(%d)",(uchar) *ep);
+            escp += strlen(escp);
             ep++;
 
         }
-        fprintf(stderr,"\n");
     } 
-    return 0;
+    return escaped_name;
+}
+
+#define MODEAUTO 2
+#define MODEINTERACTIVE 1
+#define MODEREPORT 0
+
+int mode = MODEREPORT;
+
+char new_name[256];
+
+const char *bassname(const char *path) {
+    const char *p = path + strlen(path);
+    while(p >= path && (*p) != '/')
+        --p;
+    return p+1;
+}
+
+int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
+    char *escaped_name = get_escaped_name(fn);
+
+    if (escaped_name == 0)
+        return FTW_CONTINUE;
+
+
+    int do_repair = 0;
+
+    switch (mode) {
+        case MODEREPORT:
+            printf("%s\n",escaped_name);
+            free(escaped_name);
+            return FTW_CONTINUE;
+        case MODEINTERACTIVE:
+            printf("%s\n",escaped_name);
+            printf("0) ignore\n");
+            printf("1) replace with default\n");
+            printf("2) replace with custom name\n");
+
+            if(0 == fgets(new_name,256,stdin)) {
+                free(escaped_name);
+                return FTW_STOP;
+            }
+            switch(new_name[0]) {
+                case '0':
+                    free(escaped_name);
+                    return FTW_CONTINUE;
+                case '1':
+                    strcpy(new_name,bassname(escaped_name));
+                    break;
+                case '2':
+                    if(0 == fgets(new_name,256,stdin)) {
+                        free(escaped_name);
+                        return FTW_STOP;
+                    }
+                    *(new_name+strlen(new_name)-1) = 0; /* remove newline */
+            }
+
+        case MODEAUTO:
+            strcpy(new_name,bassname(escaped_name));
+            printf("renaming %s",escaped_name);
+            do_repair = 1;
+            break;
+    }
+
+    strcpy(escaped_name,fn);
+    strcpy((char *) bassname(escaped_name),new_name);
+
+    if(0 != rename(fn,escaped_name)) {
+        perror("rename failed");
+    } else {
+        printf("%s \n",escaped_name);
+        nftw (escaped_name, &walker, 64, FTW_ACTIONRETVAL);
+    }
+    free(escaped_name);
+    return FTW_SKIP_SUBTREE;
 }
 
 int main(int argc, char** argv) {
     char *arg;
-    if(argc != 2) {
+    if(argc < 2)
         arg = ".";
-    } else {
-        arg = argv[1];
+    else {
+        if (argc < 3)
+            arg = argv[1];
+        else {
+            if (strlen(argv[1]) < 2)
+                goto usage;
+            else {
+                switch(argv[1][1]) {
+                    case 'i':
+                        mode = MODEINTERACTIVE;
+                        break;
+                    case 'a':
+                        mode = MODEAUTO;
+                        break;
+                    default:
+                        goto usage;
+                }
+            }
+            arg = argv[2];
+        }   
     }
-    nftw (arg, &walker, 64, 0);
-    return 0;
+    nftw (arg, &walker, 64, FTW_ACTIONRETVAL);
+
+    return EXIT_SUCCESS;
+
+usage:
+    fprintf(stderr,"USAGE: %s (-i|-a)? DIRNAME?",argv[0]);
+    return EXIT_FAILURE;
 };
