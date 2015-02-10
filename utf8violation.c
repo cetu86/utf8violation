@@ -22,6 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <stdlib.h>
 #include <ftw.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <readline/readline.h>
 #include <readline/history.h>
 #define uchar unsigned char
@@ -126,12 +128,10 @@ const char *bassname(const char *path) {
 
 int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
     char *escaped_name = get_escaped_name(fn);
+    mode_t m = st->st_mode & S_IFMT;
 
     if (escaped_name == 0)
         return FTW_CONTINUE;
-
-
-    int do_repair = 0;
 
     switch (mode) {
         case MODEREPORT:
@@ -140,15 +140,45 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
             return FTW_CONTINUE;
         case MODEINTERACTIVE:
 modeinteractive:
-            printf("%s\n",escaped_name);
-            printf("0) ignore\n");
+            switch(m) {
+                case S_IFSOCK:
+                    printf("socket");
+                    break;
+                case S_IFLNK:
+                    printf("symlink");
+                    break;
+                case S_IFREG:
+                    printf("file");
+                    break;
+                case S_IFBLK:
+                    printf("block device");
+                    break;
+                case S_IFDIR:
+                    printf("directory");
+                    break;
+                case S_IFCHR:
+                    printf("character device");
+                    break;
+                case S_IFIFO:
+                    printf("fifo");
+                    break;
+            }
+            printf(" %s\n\n",escaped_name);
+            if(m == S_IFDIR) {
+                printf("0) ignore and skip subtree\n");
+            } else {
+                printf("0) ignore\n");
+            }
             printf("1) replace with default\n");
             printf("2) input new filename\n");
+            printf("3) list directory contents and return here\n");
+            printf("X) terminate\n");
 
             if(0 == fgets(new_name,256,stdin)) {
                 free(escaped_name);
                 return FTW_STOP;
             }
+            printf("\n");
             switch(new_name[0]) {
                 case '0':
                     free(escaped_name);
@@ -165,11 +195,19 @@ modeinteractive:
                     *(new_name+strlen(new_name)-1) = 0; /* remove newline */
                     for (int i = 0; i < strlen(new_name); i++) {
                         if(new_name[i] == '/') {
-                            printf("filename may not contain '/'\n");
+                            printf("filename may not contain '/'.\n\n");
                             goto modeinteractive;
                         }
                     }
+                    if( find_violation(new_name,0) != 
+                            new_name + strlen(new_name)) {
+                            printf("please enter valid utf-8.\n\n");
+                            goto modeinteractive;
+                    }
                     break;
+                case '3':
+                    printf("not implemented yet\n");
+                    goto modeinteractive;
                 default:
                     free(escaped_name);
                     return FTW_STOP;
@@ -178,7 +216,6 @@ modeinteractive:
         case MODEAUTO:
             strcpy(new_name,bassname(escaped_name));
             printf("renaming %s\n",escaped_name);
-            do_repair = 1;
             break;
     }
 
@@ -187,11 +224,17 @@ modeinteractive:
 
     if(0 != rename(fn,escaped_name)) {
         perror("rename failed");
+        if(mode == MODEINTERACTIVE) {
+            free(escaped_name);
+            escaped_name = get_escaped_name(fn);
+            goto modeinteractive;
+        }
     } else {
         printf("new name is %s \n\n",escaped_name);
         nftw (escaped_name, &walker, 64, FTW_ACTIONRETVAL);
     }
     free(escaped_name);
+    printf("\n");
     return FTW_SKIP_SUBTREE;
 }
 
