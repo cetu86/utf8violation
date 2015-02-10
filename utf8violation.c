@@ -151,21 +151,25 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
             switch(new_name[0]) {
                 case '0':
                     free(escaped_name);
-                    return FTW_CONTINUE;
+                    return FTW_SKIP_SUBTREE;
                 case '1':
                     strcpy(new_name,bassname(escaped_name));
                     break;
                 case '2':
+                    printf("enter custom name: ");
                     if(0 == fgets(new_name,256,stdin)) {
                         free(escaped_name);
                         return FTW_STOP;
                     }
                     *(new_name+strlen(new_name)-1) = 0; /* remove newline */
+                    break;
+                default:
+                    return FTW_STOP;
             }
-
+            break;
         case MODEAUTO:
             strcpy(new_name,bassname(escaped_name));
-            printf("renaming %s",escaped_name);
+            printf("renaming %s\n",escaped_name);
             do_repair = 1;
             break;
     }
@@ -176,7 +180,7 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
     if(0 != rename(fn,escaped_name)) {
         perror("rename failed");
     } else {
-        printf("%s \n",escaped_name);
+        printf("new name is %s \n\n",escaped_name);
         nftw (escaped_name, &walker, 64, FTW_ACTIONRETVAL);
     }
     free(escaped_name);
@@ -208,9 +212,7 @@ int main(int argc, char** argv) {
             arg = argv[2];
         }   
     }
-    nftw (arg, &walker, 64, FTW_ACTIONRETVAL);
-
-    return EXIT_SUCCESS;
+    return nftw (arg, &walker, 64, FTW_ACTIONRETVAL);
 
 usage:
     fprintf(stderr,"USAGE: %s (-i|-a)? DIRNAME?",argv[0]);
