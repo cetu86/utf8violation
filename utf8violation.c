@@ -24,8 +24,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <readline/readline.h>
-#include <readline/history.h>
 #define uchar unsigned char
 #define ushort unsigned short
 
