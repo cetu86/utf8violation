@@ -18,10 +18,11 @@ usage
 -----
 
 Usage: ./utf8violation [MODE] [DIRECTORY]
+
 mode can be either 
-  -r  report mode (default): print all violating filenames
-  -a  auto mode: repair filesystem by escaping all violating filenames
-  -i  interactive mode: let the user enter replacement filenames
+*  -r  report mode (default): print all violating filenames
+*  -a  auto mode: repair filesystem by escaping all violating filenames
+*  -i  interactive mode: let the user enter replacement filenames
 
 directory specifies the root for a recursive directory tree walk. 
 directory defaults to the current directory.
