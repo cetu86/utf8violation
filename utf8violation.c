@@ -236,8 +236,7 @@ int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
                     return get_name_from_user(m,fn,en,nn);
                 }
             }
-            if( find_violation(nn,0) != 
-                    nn + strlen(nn)) {
+            if( is_in_violation(nn) ) {
                     printf("please enter valid utf-8.\n\n");
                     return get_name_from_user(m,fn,en,nn);
             }
