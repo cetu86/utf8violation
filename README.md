@@ -55,9 +55,9 @@ output
 ------
 
 In report mode this program outputs every illegal filename, one per line.
-Illegal characters are escaped. Their byte-value ist printed as #(n), where n is a number from 1 to 255.  
-So the "\n"-Character would be #(10). A latin-1 umlaut 'ä' becomes #(228).  
-For proper escaping any character '#' is printed as #(35).
+Illegal characters are escaped. Their byte-value ist printed as `#(n)`, where `n` is a number from 1 to 255.  
+So the `"\n"`-Character would be `#(10)`. A latin-1 umlaut `'ä'` becomes `#(228)`.  
+For proper escaping any character `'#'` is printed as `#(35)`.
 
 In auto mode the only output is to stderr in case renaming a file failed.
 
