@@ -42,5 +42,5 @@ In auto mode the only output is to stderr in case renaming a file failed.
 requirements
 ------------
 
-This program currently relies on [The GNU C Library](http://www.gnu.org/software/libc/)
+This program requires [The GNU C Library](http://www.gnu.org/software/libc/)
 for its quite versatile [nftw](http://www.gnu.org/software/libc/manual/html_node/Working-with-Directory-Trees.html#Working-with-Directory-Trees) function.
