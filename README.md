@@ -40,7 +40,7 @@ will be the escaped violating filename and respond on stdout with
 the replacement filename, followed by newline `"\n"`. Any exit code other than `0`
 will result in the termination of utf8violation.
 The external command may signal utf8violation to skip the current file by
-returning an empty line on stdin.
+returning an empty line on stdout.
 If the external command returns invalid utf-8, the current file will be skipped as well.
 
 There is an example in `share/foreign2utf8.pl`, 
