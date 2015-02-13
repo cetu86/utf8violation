@@ -37,3 +37,10 @@ So the "\n"-Character would be #(10). A latin-1 umlaut 'ä' becomes #(228).
 For proper escaping any character '#' is printed as #(35).
 
 In auto mode the only output is to stderr in case renaming a file failed.
+
+
+requirements
+------------
+
+This program currently relies on [The GNU C Library](http://www.gnu.org/software/libc/)
+for its quite versatile [nftw](http://www.gnu.org/software/libc/manual/html_node/Working-with-Directory-Trees.html#Working-with-Directory-Trees) function.
