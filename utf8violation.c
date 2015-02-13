@@ -229,7 +229,7 @@ int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
             if(0 == fgets(nn,256,stdin)) {
                 return FTW_STOP;
             }
-            *(nn+strlen(nn)-1) = 0; /* remove newline */
+            nn[strlen(nn)-1] = 0; /* remove newline */
             for (int i = 0; i < strlen(nn); i++) {
                 if(nn[i] == '/') {
                     printf("filename may not contain '/'.\n\n");
