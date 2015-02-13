@@ -25,6 +25,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <sys/types.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #define uchar unsigned char
 #define ushort unsigned short
 
@@ -110,13 +111,14 @@ char *get_escaped_name(const char *fn) {
     return escaped_name;
 }
 
+#define MODEEXTERNAL 3
 #define MODEAUTO 2
 #define MODEINTERACTIVE 1
 #define MODEREPORT 0
 
 int mode = MODEREPORT;
 
-char new_name[256];
+char **ecommand;
 
 const char *bassname(const char *path) {
     const char *p = path + strlen(path);
@@ -193,6 +195,7 @@ void printescaped(const char *fn) {
 }
 
 int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
+    printf("utf8violation: ");
     printtype(m,0);
     printf(" %s\n\n",en);
     if(m == S_IFDIR) {
@@ -202,7 +205,9 @@ int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
     }
     printf("1) (default) replace with escaped name\n");
     printf("2) input new filename\n");
-    printf("3) list directory contents and return here\n");
+    printf("3) list content of directory ");
+    fwrite(fn,sizeof(char),bassname(fn)-fn-1,stdout);
+    printf(" and return here\n");
     printf("X) terminate\n");
 
     if(0 == fgets(nn,256,stdin)) {
@@ -216,6 +221,9 @@ int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
     struct dirent e;
     struct dirent *r;
     char *fn2;
+    char *fn3;
+    char *fn4;
+    struct stat statbuf;
 
     switch(nn[0]) {
         case '0':
@@ -246,23 +254,38 @@ int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
             fn2 = (char *) malloc(b-fn);
             strncpy(fn2,fn,b-fn-1);
             fn2[b-fn-1] = 0;
+            printf("content of directory %s:\n",fn2);
+            fn3 = (char *) malloc(strlen(fn2)+1+256);
+            strcpy(fn3,fn2);
+            fn4 = fn3 + strlen(fn2);
+            *(fn4++) = '/';
+            
             d = opendir(fn2);
-            printf("content of %s:\n",fn2);
             while(1) {
                 readdir_r(d,&e,&r);
                 if (r != &e) break;
                 if (!strcmp(e.d_name,".")) continue;
                 if (!strcmp(e.d_name,"..")) continue;
+
+                strcpy(fn4,e.d_name);
+                if(stat(fn3,&statbuf) != 0) {
+                    perror("could not call stat");
+                    continue;
+                }
+                
                 if (is_in_violation(e.d_name))
                     printf("* ");
                 else
                     printf("  ");
+
+                printtype(statbuf.st_mode & S_IFMT,1);
 
                 printescaped(e.d_name);
                 printf("\n");
             } 
             closedir(d);
             printf("\n *escaped\n\n");
+            free(fn3);
             free(fn2);
             return get_name_from_user(m,fn,en,nn);
         default:
@@ -270,8 +293,85 @@ int get_name_from_user(mode_t m,const char *fn, const char* en,char *nn) {
     }
 }
 
+#define READ 0
+#define WRITE 1
+
+int callexternal(const char *arg,char *output)
+{
+    int p_stdin[2], p_stdout[2];
+    FILE *writetochild;
+    FILE *readfromchild;
+    pid_t pid;
+
+    if (pipe(p_stdin) != 0 || pipe(p_stdout) != 0) {
+        perror("error creating pipe");
+        return FTW_STOP;
+    }
+
+
+    pid = fork();
+    if (pid < 0) {
+        perror("error forking");
+        return FTW_STOP;
+    } else if (pid == 0) {
+        close(p_stdin[WRITE]);
+        if(-1 == dup2(p_stdin[READ], READ)) {
+            perror("dupping stdin");
+            return FTW_STOP;
+        }
+        close(p_stdout[READ]);
+        if(-1 == dup2(p_stdout[WRITE], WRITE)) {
+            perror("dupping stdout");
+            return FTW_STOP;
+        }
+        execvp(*ecommand,ecommand);
+        perror("execvp");
+        exit(EXIT_FAILURE);
+    }
+
+    writetochild = fdopen(p_stdin[WRITE],"w");
+    if(!writetochild) {
+        perror("fdopen writetochild");
+    }
+    fprintf(writetochild,"%s\n",arg);
+    fflush(writetochild);
+
+    readfromchild = fdopen(p_stdout[READ],"r");
+    if(!readfromchild) {
+        perror("fdopen readfromchild");
+    }
+
+    if(0 == fgets(output,256,readfromchild)) {
+        fprintf(stderr,"error reading from %s\n",*ecommand);
+        return FTW_STOP;
+    }
+    output[strlen(output)-1] = 0; /* remove newline */
+    int status;    
+    waitpid(pid, &status, 0);
+
+    if (status != EXIT_SUCCESS)      
+    {
+       fprintf(stderr,"%s terminated with exit code %d.\n",*ecommand,status);
+       return FTW_STOP;
+    }
+    fclose(writetochild);
+    close(p_stdin[READ]);
+    fclose(readfromchild);
+    close(p_stdout[WRITE]);
+    if(output[0] == 0) {
+       printf("%s returned empty string, skipping %s.\n",*ecommand,arg);
+       return FTW_SKIP_SUBTREE;
+    }
+    if(is_in_violation(output)) {
+       printf("%s did not return valid utf-8, skipping %s.\n",*ecommand,arg);
+       return FTW_SKIP_SUBTREE;
+    }
+    return FTW_CONTINUE;
+}
+
 int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
     char *escaped_name = get_escaped_name(fn);
+    char *new_name = (char *) malloc(256);
     mode_t m = st->st_mode & S_IFMT;
 
     int retval = FTW_CONTINUE;
@@ -283,17 +383,27 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
         case MODEREPORT:
             printf("%s\n",escaped_name);
             free(escaped_name);
+            free(new_name);
             return FTW_CONTINUE;
         case MODEINTERACTIVE:
             if((retval = get_name_from_user(m,fn,escaped_name,new_name)) !=
                 FTW_CONTINUE) {
                     free(escaped_name);
+                    free(new_name);
                     return retval;
             }
             break;
         case MODEAUTO:
             strcpy(new_name,bassname(escaped_name));
             printf("renaming %s\n",escaped_name);
+            break;
+        case MODEEXTERNAL:
+            if((retval = callexternal(escaped_name,new_name)) != FTW_CONTINUE) {
+                    free(escaped_name);
+                    free(new_name);
+                    return retval;
+            }
+            printf("renaming %s -> %s\n",escaped_name,new_name);
             break;
     }
 
@@ -305,6 +415,7 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
 
         if (mode == MODEINTERACTIVE) {
             free(escaped_name);
+            free(new_name);
             return walker(fn,st,t,ftw);
         }
     }
@@ -312,6 +423,7 @@ int walker(const char *fn, const struct stat *st, int t, struct FTW *ftw) {
     nftw (escaped_name, &walker, 64, FTW_ACTIONRETVAL);
 
     free(escaped_name);
+    free(new_name);
     printf("\n");
     return FTW_SKIP_SUBTREE;
 }
@@ -334,6 +446,10 @@ int main(int argc, char** argv) {
                     case 'a':
                         mode = MODEAUTO;
                         break;
+                    case 'e':
+                        mode = MODEEXTERNAL;
+                        ecommand = argv + 3;
+                        break;
                     case 'r':
                         break;
                     default:
@@ -343,14 +459,26 @@ int main(int argc, char** argv) {
             arg = argv[2];
         }   
     }
-    return nftw (arg, &walker, 64, FTW_ACTIONRETVAL);
+    if (!strcmp(arg,".")) 
+            return nftw (arg, &walker, 64, FTW_ACTIONRETVAL);
+    for (int i = 0; i < strlen(arg); i++) {
+        if(arg[i] == '/') {
+            return nftw (arg, &walker, 64, FTW_ACTIONRETVAL);
+        }
+    }
+    char *arg_ = (char *) malloc(strlen(arg) + 3);
+    strcpy(arg_,"./");
+    strcpy(arg_+2,arg);
+    return nftw (arg_, &walker, 64, FTW_ACTIONRETVAL);
 
 usage:
-    fprintf(stderr,"Usage: %s [MODE] [DIRECTORY]\n",argv[0]);
+    fprintf(stderr,"Usage: %s [MODE] [DIRECTORY] [COMMAND...]\n",argv[0]);
     fprintf(stderr,"mode can be either \n");
     fprintf(stderr,"  -r  report mode (default): print all violating filenames\n");
     fprintf(stderr,"  -a  auto mode: repair filesystem by escaping all violating filenames\n");
-    fprintf(stderr,"  -i  interactive mode: let the user enter replacement filenames\n\n");
+    fprintf(stderr,"  -i  interactive mode: let the user enter replacement filenames\n");
+    fprintf(stderr,"  -e  external mode: use command's output for replacement filename.\n");
+    fprintf(stderr,"                            see README.md for details.\n\n");
     fprintf(stderr,"directory specifies the root for a recursive directory tree walk. \n");
     fprintf(stderr,"directory defaults to the current directory.\n");
     return EXIT_FAILURE;
